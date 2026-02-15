@@ -68,8 +68,12 @@
 
 #pbm-row1, #pbm-row2 {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
+}
+
+#pbm-row2 {
+  flex-wrap: wrap;     /* ✅ фикс: кнопки не уезжают, а переносятся */
 }
 
 #pbm-search {
@@ -85,7 +89,7 @@
 
 .pbm-btn {
   height: 34px;
-  padding: 0 10px;
+  padding: 0 9px; /* чуть компактнее */
   border-radius: 12px;
   border: 1px solid var(--pbm-border);
   background: rgba(255,255,255,0.06);
@@ -93,6 +97,7 @@
   cursor: pointer;
   transition: background 120ms ease, transform 120ms ease;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .pbm-btn:hover {
@@ -163,12 +168,10 @@
   padding-left: 10px;
   display: none;
 }
-
 .pbm-folder-row.pbm-expanded + .pbm-children { display: block; }
 
 .pbm-empty { padding: 14px 10px; opacity: 0.75; font-size: 13px; }
 
-/* delete button */
 .pbm-del {
   width: 26px;
   height: 26px;
@@ -202,7 +205,7 @@
 }
 
 #pbm-modal {
-  width: 360px;
+  width: 380px;
   border-radius: 16px;
   background: rgba(22,22,26,0.96);
   border: 1px solid var(--pbm-border);
@@ -245,7 +248,7 @@
   margin-top: 6px;
 }
 
-/* --- Custom folder dropdown --- */
+/* Custom folder dropdown */
 .pbm-dd { position: relative; }
 
 .pbm-dd-btn {
@@ -301,3 +304,61 @@
 
 .pbm-dd-item:hover { background: var(--pbm-soft); }
 .pbm-dd-item.pbm-dd-dim { color: var(--pbm-text-dim); }
+
+/* -------- Notes UI -------- */
+.pbm-notes {
+  display: flex;
+  gap: 10px;
+}
+
+.pbm-notes-list {
+  width: 150px;
+  border: 1px solid var(--pbm-border);
+  border-radius: 14px;
+  overflow: auto;
+  max-height: 340px;
+  background: rgba(255,255,255,0.04);
+}
+
+.pbm-note-item {
+  padding: 10px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: 13px;
+  color: var(--pbm-text);
+}
+
+.pbm-note-item:hover { background: rgba(255,255,255,0.08); }
+
+.pbm-note-item.pbm-active {
+  background: rgba(80,160,255,0.14);
+  border-bottom-color: rgba(80,160,255,0.25);
+}
+
+.pbm-notes-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pbm-textarea {
+  border-radius: 14px;
+  border: 1px solid var(--pbm-border);
+  background: rgba(255,255,255,0.06);
+  color: var(--pbm-text);
+  padding: 10px;
+  outline: none;
+  min-height: 190px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.pbm-notes-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 2px;
+}

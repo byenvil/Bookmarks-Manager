@@ -1,6 +1,9 @@
 const TRASH_KEY = "pbm_trash";
 const TRASH_MAX = 100;
 
+const NOTES_KEY = "pbm_notes";
+const NOTES_MAX = 500;
+
 async function getTrash() {
   const obj = await chrome.storage.local.get(TRASH_KEY);
   const arr = obj?.[TRASH_KEY];
@@ -18,6 +21,20 @@ async function pushTrash(item) {
   await setTrash(trash);
 }
 
+async function getNotes() {
+  const obj = await chrome.storage.local.get(NOTES_KEY);
+  const arr = obj?.[NOTES_KEY];
+  return Array.isArray(arr) ? arr : [];
+}
+
+async function setNotes(arr) {
+  await chrome.storage.local.set({ [NOTES_KEY]: arr.slice(0, NOTES_MAX) });
+}
+
+function uid() {
+  return (crypto.randomUUID?.() || String(Date.now()) + Math.random());
+}
+
 async function removeTreeOrNode(id, isFolder) {
   if (isFolder) {
     await chrome.bookmarks.removeTree(id);
@@ -27,9 +44,6 @@ async function removeTreeOrNode(id, isFolder) {
 }
 
 async function createFromSubtree(parentId, node, index) {
-  // node: bookmark node (with children optional)
-  // parentId: target parent
-  // index: optional index for root node creation only
   const created = await chrome.bookmarks.create({
     parentId,
     index: typeof index === "number" ? index : undefined,
@@ -37,7 +51,6 @@ async function createFromSubtree(parentId, node, index) {
     url: node.url
   });
 
-  // If folder, recreate children
   if (Array.isArray(node.children) && node.children.length) {
     for (const child of node.children) {
       await createFromSubtree(created.id, child);
@@ -115,7 +128,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const id = msg?.id;
         if (!id) return sendResponse({ ok: false, error: "No id" });
 
-        // Снимаем snapshot для восстановления
         const [node] = await chrome.bookmarks.get(id);
         if (!node) return sendResponse({ ok: false, error: "Not found" });
 
@@ -134,7 +146,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!subtree) return sendResponse({ ok: false, error: "No subtree" });
 
         await pushTrash({
-          trashId: crypto.randomUUID?.() || String(Date.now()) + Math.random(),
+          trashId: uid(),
           deletedAt: Date.now(),
           parentId,
           index,
@@ -151,11 +163,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const item = trash[0];
         if (!item) return sendResponse({ ok: false, error: "Trash empty" });
 
-        // Восстанавливаем в исходный parentId (если нет — в корень)
-        const parentId = item.parentId || undefined;
-
-        // Если parentId не существует (папку удалили) — падаем обратно в корень
-        let safeParentId = parentId;
+        let safeParentId = item.parentId || undefined;
         if (safeParentId) {
           try {
             const p = await chrome.bookmarks.get(safeParentId);
@@ -167,11 +175,65 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         const created = await createFromSubtree(safeParentId, item.subtree, item.index ?? undefined);
 
-        // Удаляем из корзины
         trash.shift();
         await setTrash(trash);
 
         sendResponse({ ok: true, created });
+        return;
+      }
+
+      // ---------- NOTES CRUD ----------
+      if (msg?.type === "NOTES_LIST") {
+        const notes = await getNotes();
+        sendResponse({ ok: true, notes });
+        return;
+      }
+
+      if (msg?.type === "NOTES_CREATE") {
+        const title = (msg?.title || "").trim() || "Без названия";
+        const content = (msg?.content || "");
+        const now = Date.now();
+
+        const notes = await getNotes();
+        const note = { id: uid(), title, content, createdAt: now, updatedAt: now };
+        notes.unshift(note);
+        await setNotes(notes);
+
+        sendResponse({ ok: true, note });
+        return;
+      }
+
+      if (msg?.type === "NOTES_UPDATE") {
+        const id = msg?.id;
+        if (!id) return sendResponse({ ok: false, error: "No id" });
+
+        const title = (msg?.title || "").trim() || "Без названия";
+        const content = (msg?.content || "");
+        const now = Date.now();
+
+        const notes = await getNotes();
+        const idx = notes.findIndex((n) => n.id === id);
+        if (idx === -1) return sendResponse({ ok: false, error: "Not found" });
+
+        notes[idx] = { ...notes[idx], title, content, updatedAt: now };
+        await setNotes(notes);
+
+        sendResponse({ ok: true, note: notes[idx] });
+        return;
+      }
+
+      if (msg?.type === "NOTES_DELETE") {
+        const id = msg?.id;
+        if (!id) return sendResponse({ ok: false, error: "No id" });
+
+        const notes = await getNotes();
+        const idx = notes.findIndex((n) => n.id === id);
+        if (idx === -1) return sendResponse({ ok: false, error: "Not found" });
+
+        const [removed] = notes.splice(idx, 1);
+        await setNotes(notes);
+
+        sendResponse({ ok: true, removed });
         return;
       }
 
@@ -181,5 +243,5 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
   })();
 
-  return true; // async
+  return true;
 });

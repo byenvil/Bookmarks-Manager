@@ -46,9 +46,15 @@
   restoreBtn.type = "button";
   restoreBtn.textContent = "Восстановить";
 
+  const notesBtn = document.createElement("button");
+  notesBtn.className = "pbm-btn";
+  notesBtn.type = "button";
+  notesBtn.textContent = "Заметки";
+
   row2.appendChild(createFolderBtn);
   row2.appendChild(addBookmarkBtn);
   row2.appendChild(restoreBtn);
+  row2.appendChild(notesBtn);
 
   const content = document.createElement("div");
   content.id = "pbm-content";
@@ -117,7 +123,6 @@
     return Array.isArray(node.children);
   }
 
-  // фавиконки (оставляем как было у тебя)
   function faviconForUrl(url) {
     try {
       const u = new URL(url);
@@ -127,12 +132,17 @@
     }
   }
 
-  function openModal(title, bodyNode, okText = "OK", cancelText = "Отмена") {
+  // ✅ showCancel: можно скрывать кнопку Cancel (например, в заметках)
+  function openModal(title, bodyNode, okText = "OK", cancelText = "Отмена", showCancel = true) {
     modalTitle.textContent = title;
     modalBody.innerHTML = "";
     modalBody.appendChild(bodyNode);
+
     modalOk.textContent = okText;
     modalCancel.textContent = cancelText;
+
+    modalCancel.style.display = showCancel ? "" : "none";
+
     modalOverlay.style.display = "flex";
   }
 
@@ -140,9 +150,9 @@
     modalOverlay.style.display = "none";
     modalBody.innerHTML = "";
     document.querySelectorAll(".pbm-dd-menu.pbm-open").forEach((m) => m.classList.remove("pbm-open"));
-    // сброс обработчиков
     modalOk.onclick = null;
     modalCancel.onclick = null;
+    modalCancel.style.display = ""; // вернуть по умолчанию
   }
 
   modalOverlay.addEventListener("click", (e) => {
@@ -156,7 +166,7 @@
     body.style.lineHeight = "1.35";
     body.textContent = `Вы уверены что хотите удалить "${name}"?`;
 
-    openModal("Подтверждение", body, "Да", "Нет");
+    openModal("Подтверждение", body, "Да", "Нет", true);
 
     modalOk.onclick = async () => {
       await onYes();
@@ -236,7 +246,7 @@
     content.appendChild(frag);
   }
 
-  function makeDeleteBtn(label, onClick) {
+  function makeDeleteBtn(onClick) {
     const del = document.createElement("div");
     del.className = "pbm-del";
     del.title = "Удалить";
@@ -248,7 +258,6 @@
       onClick();
     });
 
-    // чтоб middle-click по кресту не открывал окно
     del.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -282,7 +291,7 @@
       left.appendChild(icon);
       left.appendChild(title);
 
-      const del = makeDeleteBtn(node.title || "Без названия", async () => {
+      const del = makeDeleteBtn(() => {
         confirmDelete(node.title || "Без названия", async () => {
           await chrome.runtime.sendMessage({ type: "DELETE_NODE", id: node.id });
           await loadBookmarks();
@@ -301,7 +310,6 @@
       children.appendChild(frag);
 
       if (forceExpand || node.__pbmAutoExpand) row.classList.add("pbm-expanded");
-
       row.addEventListener("click", () => row.classList.toggle("pbm-expanded"));
 
       wrap.appendChild(row);
@@ -309,7 +317,6 @@
       return wrap;
     }
 
-    // bookmark leaf
     const row = document.createElement("div");
     row.className = "pbm-item";
     row.dataset.url = node.url || "";
@@ -341,7 +348,7 @@
     left.appendChild(ico);
     left.appendChild(title);
 
-    const del = makeDeleteBtn(node.title || node.url || "Закладка", async () => {
+    const del = makeDeleteBtn(() => {
       confirmDelete(node.title || node.url || "Закладка", async () => {
         await chrome.runtime.sendMessage({ type: "DELETE_NODE", id: node.id });
         await loadBookmarks();
@@ -356,7 +363,6 @@
       if (url) window.open(url, "_blank", "noopener,noreferrer");
     });
 
-    // middle click -> new window
     row.addEventListener("auxclick", async (e) => {
       if (e.button !== 1) return;
       e.preventDefault();
@@ -395,7 +401,7 @@
     debounce(() => requestAnimationFrame(() => renderTree(originalNodes, q)), 120);
   });
 
-  // ---------------- Custom dropdown ----------------
+  // ---------------- Dropdown for folder choose ----------------
   function folderDropdown({ allowNone }) {
     let selectedId = "";
     let selectedLabel = allowNone ? "Без папки (в корень)" : "Выберите папку";
@@ -450,12 +456,8 @@
 
     return {
       wrap,
-      get value() {
-        return selectedId;
-      },
-      destroy() {
-        document.removeEventListener("click", onDocClick);
-      }
+      get value() { return selectedId; },
+      destroy() { document.removeEventListener("click", onDocClick); }
     };
   }
 
@@ -488,7 +490,7 @@
     body.appendChild(field("Название папки", nameInput).wrap);
     body.appendChild(field("Где создать (необязательно)", dd.wrap).wrap);
 
-    openModal("Создать папку", body, "Создать");
+    openModal("Создать папку", body, "Создать", "Отмена", true);
 
     modalOk.onclick = async () => {
       const title = nameInput.value.trim();
@@ -508,7 +510,7 @@
   });
 
   // ---------- Add bookmark ----------
-  addBookmarkBtn.addEventListener("click", async () => {
+  addBookmarkBtn.addEventListener("click", () => {
     const body = document.createElement("div");
 
     const urlInput = inputText("");
@@ -538,7 +540,7 @@
     body.appendChild(field("Название", titleInput).wrap);
     body.appendChild(field("Папка (необязательно)", dd.wrap).wrap);
 
-    openModal("Добавить закладку", body, "Добавить");
+    openModal("Добавить закладку", body, "Добавить", "Отмена", true);
 
     modalOk.onclick = async () => {
       const url = urlInput.value.trim();
@@ -566,16 +568,174 @@
     const res = await chrome.runtime.sendMessage({ type: "RESTORE_LAST_DELETED" });
     if (res?.ok) {
       await loadBookmarks();
-    } else {
-      // мягко, без алертов: можно показать модалку
-      const body = document.createElement("div");
-      body.style.fontSize = "13px";
-      body.style.opacity = "0.9";
-      body.textContent = "Корзина пуста — нечего восстанавливать.";
-      openModal("Восстановление", body, "Ок", "Закрыть");
-      modalOk.onclick = closeModal;
-      modalCancel.onclick = closeModal;
+      return;
     }
+    const body = document.createElement("div");
+    body.style.fontSize = "13px";
+    body.style.opacity = "0.9";
+    body.textContent = "Корзина пуста — нечего восстанавливать.";
+    openModal("Восстановление", body, "Ок", "Закрыть", false);
+    modalOk.onclick = closeModal;
+  });
+
+  // ---------- Notes modal (CRUD) ----------
+  notesBtn.addEventListener("click", async () => {
+    const res = await chrome.runtime.sendMessage({ type: "NOTES_LIST" });
+    let notes = res?.ok ? res.notes : [];
+
+    let activeId = notes[0]?.id || null;
+
+    const wrap = document.createElement("div");
+    wrap.className = "pbm-notes";
+
+    const list = document.createElement("div");
+    list.className = "pbm-notes-list";
+
+    const editor = document.createElement("div");
+    editor.className = "pbm-notes-editor";
+
+    const titleInput = inputText("");
+    titleInput.placeholder = "Заголовок";
+
+    const textArea = document.createElement("textarea");
+    textArea.className = "pbm-textarea";
+    textArea.placeholder = "Текст заметки…";
+
+    const actions = document.createElement("div");
+    actions.className = "pbm-notes-actions";
+
+    const left = document.createElement("div");
+    left.style.display = "flex";
+    left.style.gap = "10px";
+
+    const createBtn = document.createElement("button");
+    createBtn.className = "pbm-btn";
+    createBtn.type = "button";
+    createBtn.textContent = "Создать";
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "pbm-btn";
+    deleteBtn.type = "button";
+    deleteBtn.textContent = "Удалить";
+
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "pbm-btn pbm-btn-primary";
+    saveBtn.type = "button";
+    saveBtn.textContent = "Сохранить";
+
+    left.appendChild(createBtn);
+    left.appendChild(deleteBtn);
+    actions.appendChild(left);
+    actions.appendChild(saveBtn);
+
+    editor.appendChild(field("Заголовок", titleInput).wrap);
+    editor.appendChild(field("Текст", textArea).wrap);
+    editor.appendChild(actions);
+
+    wrap.appendChild(list);
+    wrap.appendChild(editor);
+
+    function renderList() {
+      list.innerHTML = "";
+      if (!notes.length) {
+        const empty = document.createElement("div");
+        empty.style.padding = "10px";
+        empty.style.opacity = "0.75";
+        empty.style.fontSize = "13px";
+        empty.textContent = "Пока нет заметок";
+        list.appendChild(empty);
+        return;
+      }
+
+      for (const n of notes) {
+        const item = document.createElement("div");
+        item.className = "pbm-note-item" + (n.id === activeId ? " pbm-active" : "");
+        item.textContent = n.title || "Без названия";
+        item.onclick = () => {
+          activeId = n.id;
+          titleInput.value = n.title || "";
+          textArea.value = n.content || "";
+          renderList();
+        };
+        list.appendChild(item);
+      }
+    }
+
+    function loadActive() {
+      const active = notes.find((n) => n.id === activeId) || null;
+      if (active) {
+        titleInput.value = active.title || "";
+        textArea.value = active.content || "";
+      } else {
+        titleInput.value = "";
+        textArea.value = "";
+      }
+    }
+
+    createBtn.onclick = async () => {
+      const created = await chrome.runtime.sendMessage({
+        type: "NOTES_CREATE",
+        title: "Без названия",
+        content: ""
+      });
+      if (created?.ok) {
+        notes = [created.note, ...notes];
+        activeId = created.note.id;
+        renderList();
+        loadActive();
+      }
+    };
+
+    saveBtn.onclick = async () => {
+      if (!activeId) {
+        const created = await chrome.runtime.sendMessage({
+          type: "NOTES_CREATE",
+          title: titleInput.value.trim() || "Без названия",
+          content: textArea.value || ""
+        });
+        if (created?.ok) {
+          notes = [created.note, ...notes];
+          activeId = created.note.id;
+          renderList();
+        }
+        return;
+      }
+
+      const upd = await chrome.runtime.sendMessage({
+        type: "NOTES_UPDATE",
+        id: activeId,
+        title: titleInput.value.trim() || "Без названия",
+        content: textArea.value || ""
+      });
+      if (upd?.ok) {
+        notes = notes.map((n) => (n.id === activeId ? upd.note : n));
+        renderList();
+      }
+    };
+
+    deleteBtn.onclick = async () => {
+      if (!activeId) return;
+
+      const current = notes.find((n) => n.id === activeId);
+      const name = current?.title || "Без названия";
+
+      confirmDelete(name, async () => {
+        const del = await chrome.runtime.sendMessage({ type: "NOTES_DELETE", id: activeId });
+        if (del?.ok) {
+          notes = notes.filter((n) => n.id !== activeId);
+          activeId = notes[0]?.id || null;
+          renderList();
+          loadActive();
+        }
+      });
+    };
+
+    // ✅ ОДНА кнопка "Закрыть": скрываем Cancel
+    openModal("Заметки", wrap, "Закрыть", "Закрыть", false);
+    modalOk.onclick = closeModal;
+
+    renderList();
+    loadActive();
   });
 
   // ---------------- Init ----------------
