@@ -41,8 +41,14 @@
   addBookmarkBtn.type = "button";
   addBookmarkBtn.textContent = "Добавить закладку";
 
+  const restoreBtn = document.createElement("button");
+  restoreBtn.className = "pbm-btn";
+  restoreBtn.type = "button";
+  restoreBtn.textContent = "Восстановить";
+
   row2.appendChild(createFolderBtn);
   row2.appendChild(addBookmarkBtn);
+  row2.appendChild(restoreBtn);
 
   const content = document.createElement("div");
   content.id = "pbm-content";
@@ -111,22 +117,22 @@
     return Array.isArray(node.children);
   }
 
-  // ✅ Новый способ фавиконок: Google S2 (самый “как у браузера” по надежности)
+  // фавиконки (оставляем как было у тебя)
   function faviconForUrl(url) {
     try {
       const u = new URL(url);
-      // domain_url лучше чем domain=, потому что учитывает поддомены/протокол
       return `https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(u.origin)}`;
     } catch {
       return "";
     }
   }
 
-  function openModal(title, bodyNode, okText = "OK") {
+  function openModal(title, bodyNode, okText = "OK", cancelText = "Отмена") {
     modalTitle.textContent = title;
     modalBody.innerHTML = "";
     modalBody.appendChild(bodyNode);
     modalOk.textContent = okText;
+    modalCancel.textContent = cancelText;
     modalOverlay.style.display = "flex";
   }
 
@@ -134,12 +140,30 @@
     modalOverlay.style.display = "none";
     modalBody.innerHTML = "";
     document.querySelectorAll(".pbm-dd-menu.pbm-open").forEach((m) => m.classList.remove("pbm-open"));
+    // сброс обработчиков
+    modalOk.onclick = null;
+    modalCancel.onclick = null;
   }
 
-  modalCancel.addEventListener("click", closeModal);
   modalOverlay.addEventListener("click", (e) => {
     if (e.target === modalOverlay) closeModal();
   });
+
+  function confirmDelete(name, onYes) {
+    const body = document.createElement("div");
+    body.style.fontSize = "13px";
+    body.style.opacity = "0.92";
+    body.style.lineHeight = "1.35";
+    body.textContent = `Вы уверены что хотите удалить "${name}"?`;
+
+    openModal("Подтверждение", body, "Да", "Нет");
+
+    modalOk.onclick = async () => {
+      await onYes();
+      closeModal();
+    };
+    modalCancel.onclick = () => closeModal();
+  }
 
   // ---------------- Bookmarks load ----------------
   async function loadBookmarks() {
@@ -212,12 +236,36 @@
     content.appendChild(frag);
   }
 
+  function makeDeleteBtn(label, onClick) {
+    const del = document.createElement("div");
+    del.className = "pbm-del";
+    del.title = "Удалить";
+    del.textContent = "×";
+
+    del.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+    });
+
+    // чтоб middle-click по кресту не открывал окно
+    del.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    return del;
+  }
+
   function renderNode(node, forceExpand) {
     if (isFolder(node)) {
       const wrap = document.createElement("div");
 
       const row = document.createElement("div");
       row.className = "pbm-item pbm-folder-row";
+
+      const left = document.createElement("div");
+      left.className = "pbm-left";
 
       const icon = document.createElement("div");
       icon.className = "pbm-favicon";
@@ -231,8 +279,18 @@
       title.className = "pbm-title pbm-folder";
       title.textContent = node.title || "Без названия";
 
-      row.appendChild(icon);
-      row.appendChild(title);
+      left.appendChild(icon);
+      left.appendChild(title);
+
+      const del = makeDeleteBtn(node.title || "Без названия", async () => {
+        confirmDelete(node.title || "Без названия", async () => {
+          await chrome.runtime.sendMessage({ type: "DELETE_NODE", id: node.id });
+          await loadBookmarks();
+        });
+      });
+
+      row.appendChild(left);
+      row.appendChild(del);
 
       const children = document.createElement("div");
       children.className = "pbm-children";
@@ -256,6 +314,9 @@
     row.className = "pbm-item";
     row.dataset.url = node.url || "";
 
+    const left = document.createElement("div");
+    left.className = "pbm-left";
+
     const ico = document.createElement("img");
     ico.className = "pbm-favicon";
     ico.alt = "";
@@ -265,30 +326,37 @@
     const primary = node.url ? faviconForUrl(node.url) : "";
     ico.src = primary;
 
-    // ✅ fallback: если даже S2 не дал — попробуем favicon.ico напрямую
     ico.onerror = () => {
       ico.onerror = null;
       try {
         const u = new URL(node.url);
         ico.src = `${u.origin}/favicon.ico`;
-      } catch {
-        // оставим как есть
-      }
+      } catch {}
     };
 
     const title = document.createElement("div");
     title.className = "pbm-title";
     title.textContent = node.title || node.url || "Закладка";
 
-    row.appendChild(ico);
-    row.appendChild(title);
+    left.appendChild(ico);
+    left.appendChild(title);
+
+    const del = makeDeleteBtn(node.title || node.url || "Закладка", async () => {
+      confirmDelete(node.title || node.url || "Закладка", async () => {
+        await chrome.runtime.sendMessage({ type: "DELETE_NODE", id: node.id });
+        await loadBookmarks();
+      });
+    });
+
+    row.appendChild(left);
+    row.appendChild(del);
 
     row.addEventListener("click", () => {
       const url = row.dataset.url;
       if (url) window.open(url, "_blank", "noopener,noreferrer");
     });
 
-    // средняя кнопка — новое окно
+    // middle click -> new window
     row.addEventListener("auxclick", async (e) => {
       if (e.button !== 1) return;
       e.preventDefault();
@@ -297,6 +365,7 @@
       if (!url) return;
       await chrome.runtime.sendMessage({ type: "OPEN_IN_NEW_WINDOW", url });
     });
+
     row.addEventListener("mousedown", async (e) => {
       if (e.button !== 1) return;
       e.preventDefault();
@@ -390,7 +459,6 @@
     };
   }
 
-  // ---------------- Modal field helpers ----------------
   function field(labelText, controlNode) {
     const wrap = document.createElement("div");
     wrap.className = "pbm-field";
@@ -410,7 +478,7 @@
     return i;
   }
 
-  // ---------- Create folder modal ----------
+  // ---------- Create folder ----------
   createFolderBtn.addEventListener("click", () => {
     const body = document.createElement("div");
     const nameInput = inputText("");
@@ -427,10 +495,7 @@
       const parentId = dd.value || null;
       if (!title) return;
 
-      try {
-        await chrome.bookmarks.create({ parentId: parentId || undefined, title });
-      } catch {}
-
+      await chrome.runtime.sendMessage({ type: "CREATE_FOLDER", title, parentId });
       dd.destroy();
       closeModal();
       await loadBookmarks();
@@ -442,7 +507,7 @@
     };
   });
 
-  // ---------- Add bookmark modal ----------
+  // ---------- Add bookmark ----------
   addBookmarkBtn.addEventListener("click", async () => {
     const body = document.createElement("div");
 
@@ -483,13 +548,7 @@
       if (!url) return;
       if (!title) title = url;
 
-      try {
-        await chrome.bookmarks.create({
-          parentId: parentId || undefined,
-          title,
-          url
-        });
-      } catch {}
+      await chrome.runtime.sendMessage({ type: "CREATE_BOOKMARK", url, title, parentId });
 
       dd.destroy();
       closeModal();
@@ -500,6 +559,23 @@
       dd.destroy();
       closeModal();
     };
+  });
+
+  // ---------- Restore last deleted ----------
+  restoreBtn.addEventListener("click", async () => {
+    const res = await chrome.runtime.sendMessage({ type: "RESTORE_LAST_DELETED" });
+    if (res?.ok) {
+      await loadBookmarks();
+    } else {
+      // мягко, без алертов: можно показать модалку
+      const body = document.createElement("div");
+      body.style.fontSize = "13px";
+      body.style.opacity = "0.9";
+      body.textContent = "Корзина пуста — нечего восстанавливать.";
+      openModal("Восстановление", body, "Ок", "Закрыть");
+      modalOk.onclick = closeModal;
+      modalCancel.onclick = closeModal;
+    }
   });
 
   // ---------------- Init ----------------
