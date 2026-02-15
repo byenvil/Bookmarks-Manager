@@ -49,7 +49,6 @@
 
   header.appendChild(row1);
   header.appendChild(row2);
-
   sidebar.appendChild(header);
   sidebar.appendChild(content);
 
@@ -92,7 +91,7 @@
   // ---------------- State ----------------
   let isOpen = false;
   let originalNodes = [];
-  let folderOptions = []; // {id, titlePath}
+  let folderOptions = [];
   let lastRenderQuery = "";
   let debounceTimer = null;
 
@@ -112,10 +111,12 @@
     return Array.isArray(node.children);
   }
 
+  // ✅ Новый способ фавиконок: Google S2 (самый “как у браузера” по надежности)
   function faviconForUrl(url) {
     try {
       const u = new URL(url);
-      return `${u.origin}/favicon.ico`;
+      // domain_url лучше чем domain=, потому что учитывает поддомены/протокол
+      return `https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(u.origin)}`;
     } catch {
       return "";
     }
@@ -132,6 +133,7 @@
   function closeModal() {
     modalOverlay.style.display = "none";
     modalBody.innerHTML = "";
+    document.querySelectorAll(".pbm-dd-menu.pbm-open").forEach((m) => m.classList.remove("pbm-open"));
   }
 
   modalCancel.addEventListener("click", closeModal);
@@ -148,9 +150,7 @@
     const nodes = root?.children ?? [];
     originalNodes = nodes.flatMap((n) => n.children ?? []);
 
-    // собрать список папок для селектора
     folderOptions = buildFolderOptions(originalNodes);
-
     renderTree(originalNodes, lastRenderQuery);
   }
 
@@ -164,12 +164,11 @@
       (node.children || []).forEach((ch) => walk(ch, newPath));
     };
     nodes.forEach((n) => walk(n, ""));
-    // Корень (панель закладок) — будем использовать специальный id = null
     out.sort((a, b) => a.titlePath.localeCompare(b.titlePath, "ru"));
     return out;
   }
 
-  // ---------------- Filtering (поиск по папкам + закладкам + url) ----------------
+  // ---------------- Filtering ----------------
   function filterTree(nodes, q) {
     const query = q.trim().toLowerCase();
     if (!query) return nodes;
@@ -193,12 +192,11 @@
     return nodes.map(walk).filter(Boolean);
   }
 
-  // ---------------- Render (быстрее: DocumentFragment + минимум перерисовок) ----------------
+  // ---------------- Render ----------------
   function renderTree(nodes, query) {
     lastRenderQuery = query || "";
     const filtered = filterTree(nodes, lastRenderQuery);
 
-    // Полная перерисовка контента — но делаем ее дешёвой
     content.textContent = "";
 
     if (!filtered.length) {
@@ -244,19 +242,16 @@
       for (const ch of kids) frag.appendChild(renderNode(ch, forceExpand));
       children.appendChild(frag);
 
-      if (forceExpand || node.__pbmAutoExpand) {
-        row.classList.add("pbm-expanded");
-      }
+      if (forceExpand || node.__pbmAutoExpand) row.classList.add("pbm-expanded");
 
-      row.addEventListener("click", () => {
-        row.classList.toggle("pbm-expanded");
-      });
+      row.addEventListener("click", () => row.classList.toggle("pbm-expanded"));
 
       wrap.appendChild(row);
       wrap.appendChild(children);
       return wrap;
     }
 
+    // bookmark leaf
     const row = document.createElement("div");
     row.className = "pbm-item";
     row.dataset.url = node.url || "";
@@ -264,9 +259,22 @@
     const ico = document.createElement("img");
     ico.className = "pbm-favicon";
     ico.alt = "";
-    ico.referrerPolicy = "no-referrer";
     ico.loading = "lazy";
-    ico.src = node.url ? faviconForUrl(node.url) : "";
+    ico.referrerPolicy = "no-referrer";
+
+    const primary = node.url ? faviconForUrl(node.url) : "";
+    ico.src = primary;
+
+    // ✅ fallback: если даже S2 не дал — попробуем favicon.ico напрямую
+    ico.onerror = () => {
+      ico.onerror = null;
+      try {
+        const u = new URL(node.url);
+        ico.src = `${u.origin}/favicon.ico`;
+      } catch {
+        // оставим как есть
+      }
+    };
 
     const title = document.createElement("div");
     title.className = "pbm-title";
@@ -280,10 +288,28 @@
       if (url) window.open(url, "_blank", "noopener,noreferrer");
     });
 
+    // средняя кнопка — новое окно
+    row.addEventListener("auxclick", async (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const url = row.dataset.url;
+      if (!url) return;
+      await chrome.runtime.sendMessage({ type: "OPEN_IN_NEW_WINDOW", url });
+    });
+    row.addEventListener("mousedown", async (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const url = row.dataset.url;
+      if (!url) return;
+      await chrome.runtime.sendMessage({ type: "OPEN_IN_NEW_WINDOW", url });
+    });
+
     return row;
   }
 
-  // ---------------- Actions ----------------
+  // ---------------- Events ----------------
   handle.addEventListener("click", () => toggle());
 
   window.addEventListener("keydown", (e) => {
@@ -292,123 +318,88 @@
   });
 
   collapseBtn.addEventListener("click", () => {
-    sidebar.querySelectorAll(".pbm-folder-row.pbm-expanded").forEach((el) => {
-      el.classList.remove("pbm-expanded");
-    });
+    sidebar.querySelectorAll(".pbm-folder-row.pbm-expanded").forEach((el) => el.classList.remove("pbm-expanded"));
   });
 
   search.addEventListener("input", () => {
     const q = search.value || "";
-    // debounce, чтобы не лагало
-    debounce(() => {
-      // рендерим в rAF, чтобы было плавнее
-      requestAnimationFrame(() => renderTree(originalNodes, q));
-    }, 120);
+    debounce(() => requestAnimationFrame(() => renderTree(originalNodes, q)), 120);
   });
 
-  // ---------- Create folder modal ----------
-  createFolderBtn.addEventListener("click", () => {
-    const body = document.createElement("div");
+  // ---------------- Custom dropdown ----------------
+  function folderDropdown({ allowNone }) {
+    let selectedId = "";
+    let selectedLabel = allowNone ? "Без папки (в корень)" : "Выберите папку";
 
-    const f1 = field("Название папки", inputText("Новая папка"));
-    const f2 = field("Где создать", selectFolder());
-
-    body.appendChild(f1.wrap);
-    body.appendChild(f2.wrap);
-
-    openModal("Создать папку", body, "Создать");
-
-    modalOk.onclick = async () => {
-      const title = f1.input.value.trim();
-      const parentId = f2.select.value || null;
-
-      if (!title) return;
-
-      try {
-        await chrome.bookmarks.create({ parentId: parentId || undefined, title });
-      } catch (e) {
-        // тихо
-      }
-      closeModal();
-      await loadBookmarks();
-    };
-  });
-
-  // ---------- Add bookmark modal ----------
-  addBookmarkBtn.addEventListener("click", async () => {
-    const active = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_TAB" });
-    const activeUrl = active?.ok ? (active.tab.url || "") : "";
-    const activeTitle = active?.ok ? (active.tab.title || "") : "";
-
-    const body = document.createElement("div");
-
-    const fUrl = field("URL", inputText(activeUrl || "https://"));
-    const fTitle = field("Название", inputText(activeTitle || ""));
-    const fFolder = field("Папка (необязательно)", selectFolder(true));
-
-    // кнопка "взять из текущей вкладки"
-    const takeCurrent = document.createElement("button");
-    takeCurrent.className = "pbm-btn";
-    takeCurrent.type = "button";
-    takeCurrent.textContent = "Подставить текущую страницу";
-    takeCurrent.style.width = "100%";
-    takeCurrent.style.marginBottom = "10px";
-
-    takeCurrent.onclick = async () => {
-      const a = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_TAB" });
-      if (a?.ok) {
-        fUrl.input.value = a.tab.url || "";
-        if (!fTitle.input.value.trim()) fTitle.input.value = a.tab.title || "";
-      }
-    };
-
-    body.appendChild(takeCurrent);
-    body.appendChild(fUrl.wrap);
-    body.appendChild(fTitle.wrap);
-    body.appendChild(fFolder.wrap);
-
-    openModal("Добавить закладку", body, "Добавить");
-
-    modalOk.onclick = async () => {
-      const url = fUrl.input.value.trim();
-      let title = fTitle.input.value.trim();
-      const parentId = fFolder.select.value || null;
-
-      if (!url) return;
-      if (!title) title = url;
-
-      try {
-        await chrome.bookmarks.create({
-          parentId: parentId || undefined,
-          title,
-          url
-        });
-      } catch (e) {
-        // тихо
-      }
-
-      closeModal();
-      await loadBookmarks();
-    };
-  });
-
-  // ---------------- UI field helpers ----------------
-  function field(labelText, control) {
     const wrap = document.createElement("div");
-    wrap.className = "pbm-field";
+    wrap.className = "pbm-dd";
 
-    const label = document.createElement("div");
-    label.className = "pbm-label";
-    label.textContent = labelText;
+    const btn = document.createElement("div");
+    btn.className = "pbm-dd-btn";
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = selectedLabel;
+    const caret = document.createElement("span");
+    caret.className = "pbm-dd-caret";
+    caret.textContent = "▾";
+    btn.appendChild(labelSpan);
+    btn.appendChild(caret);
 
-    wrap.appendChild(label);
-    wrap.appendChild(control);
+    const menu = document.createElement("div");
+    menu.className = "pbm-dd-menu";
+
+    const addItem = (id, text, dim = false) => {
+      const it = document.createElement("div");
+      it.className = "pbm-dd-item" + (dim ? " pbm-dd-dim" : "");
+      it.textContent = text;
+      it.addEventListener("click", () => {
+        selectedId = id;
+        selectedLabel = text;
+        labelSpan.textContent = selectedLabel;
+        menu.classList.remove("pbm-open");
+      });
+      menu.appendChild(it);
+    };
+
+    if (allowNone) addItem("", "Без папки (в корень)", true);
+    for (const f of folderOptions) addItem(f.id, f.titlePath);
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.querySelectorAll(".pbm-dd-menu.pbm-open").forEach((m) => {
+        if (m !== menu) m.classList.remove("pbm-open");
+      });
+      menu.classList.toggle("pbm-open");
+    });
+
+    const onDocClick = (e) => {
+      if (!wrap.contains(e.target)) menu.classList.remove("pbm-open");
+    };
+    document.addEventListener("click", onDocClick);
+
+    wrap.appendChild(btn);
+    wrap.appendChild(menu);
 
     return {
       wrap,
-      input: control.tagName === "INPUT" ? control : null,
-      select: control.tagName === "SELECT" ? control : null
+      get value() {
+        return selectedId;
+      },
+      destroy() {
+        document.removeEventListener("click", onDocClick);
+      }
     };
+  }
+
+  // ---------------- Modal field helpers ----------------
+  function field(labelText, controlNode) {
+    const wrap = document.createElement("div");
+    wrap.className = "pbm-field";
+    const label = document.createElement("div");
+    label.className = "pbm-label";
+    label.textContent = labelText;
+    wrap.appendChild(label);
+    wrap.appendChild(controlNode);
+    return { wrap };
   }
 
   function inputText(value) {
@@ -419,26 +410,97 @@
     return i;
   }
 
-  function selectFolder(allowNone = false) {
-    const s = document.createElement("select");
-    s.className = "pbm-select";
+  // ---------- Create folder modal ----------
+  createFolderBtn.addEventListener("click", () => {
+    const body = document.createElement("div");
+    const nameInput = inputText("");
+    nameInput.placeholder = "Например: Работа / Учёба / Инструменты";
+    const dd = folderDropdown({ allowNone: true });
 
-    if (allowNone) {
-      const opt = document.createElement("option");
-      opt.value = "";
-      opt.textContent = "Без папки (в корень)";
-      s.appendChild(opt);
-    }
+    body.appendChild(field("Название папки", nameInput).wrap);
+    body.appendChild(field("Где создать (необязательно)", dd.wrap).wrap);
 
-    for (const f of folderOptions) {
-      const opt = document.createElement("option");
-      opt.value = f.id;
-      opt.textContent = f.titlePath;
-      s.appendChild(opt);
-    }
+    openModal("Создать папку", body, "Создать");
 
-    return s;
-  }
+    modalOk.onclick = async () => {
+      const title = nameInput.value.trim();
+      const parentId = dd.value || null;
+      if (!title) return;
+
+      try {
+        await chrome.bookmarks.create({ parentId: parentId || undefined, title });
+      } catch {}
+
+      dd.destroy();
+      closeModal();
+      await loadBookmarks();
+    };
+
+    modalCancel.onclick = () => {
+      dd.destroy();
+      closeModal();
+    };
+  });
+
+  // ---------- Add bookmark modal ----------
+  addBookmarkBtn.addEventListener("click", async () => {
+    const body = document.createElement("div");
+
+    const urlInput = inputText("");
+    urlInput.placeholder = "https://example.com";
+    const titleInput = inputText("");
+    titleInput.placeholder = "Название (можно оставить пустым)";
+
+    const dd = folderDropdown({ allowNone: true });
+
+    const takeCurrent = document.createElement("button");
+    takeCurrent.className = "pbm-btn";
+    takeCurrent.type = "button";
+    takeCurrent.textContent = "Подставить текущую страницу";
+    takeCurrent.style.width = "100%";
+    takeCurrent.style.marginBottom = "10px";
+
+    takeCurrent.onclick = async () => {
+      const active = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_TAB" });
+      if (active?.ok) {
+        urlInput.value = active.tab.url || "";
+        if (!titleInput.value.trim()) titleInput.value = active.tab.title || "";
+      }
+    };
+
+    body.appendChild(takeCurrent);
+    body.appendChild(field("URL", urlInput).wrap);
+    body.appendChild(field("Название", titleInput).wrap);
+    body.appendChild(field("Папка (необязательно)", dd.wrap).wrap);
+
+    openModal("Добавить закладку", body, "Добавить");
+
+    modalOk.onclick = async () => {
+      const url = urlInput.value.trim();
+      let title = titleInput.value.trim();
+      const parentId = dd.value || null;
+
+      if (!url) return;
+      if (!title) title = url;
+
+      try {
+        await chrome.bookmarks.create({
+          parentId: parentId || undefined,
+          title,
+          url
+        });
+      } catch {}
+
+      dd.destroy();
+      closeModal();
+      await loadBookmarks();
+    };
+
+    modalCancel.onclick = () => {
+      dd.destroy();
+      closeModal();
+    };
+  });
 
   // ---------------- Init ----------------
   loadBookmarks();

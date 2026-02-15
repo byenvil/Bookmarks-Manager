@@ -1,10 +1,10 @@
-/* Performance: меньше тяжелых эффектов */
 :root {
-  --pbm-bg: rgba(18, 18, 22, 0.92);   /* делаем более “плоским” */
+  --pbm-bg: rgba(18, 18, 22, 0.92);
   --pbm-border: rgba(255,255,255,0.10);
   --pbm-soft: rgba(255,255,255,0.08);
   --pbm-soft2: rgba(255,255,255,0.12);
   --pbm-text: rgba(255,255,255,0.92);
+  --pbm-text-dim: rgba(255,255,255,0.70);
 }
 
 #pbm-handle {
@@ -48,15 +48,12 @@
   transition: transform 180ms ease;
   z-index: 2147483646;
   background: var(--pbm-bg);
-  /* backdrop-filter убран ради FPS */
   box-shadow: -18px 0 44px rgba(0,0,0,0.40);
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--pbm-border);
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
   color: var(--pbm-text);
-
-  /* performance */
   contain: layout paint style;
   will-change: transform;
 }
@@ -73,13 +70,7 @@
   border-bottom: 1px solid var(--pbm-border);
 }
 
-#pbm-row1 {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-#pbm-row2 {
+#pbm-row1, #pbm-row2 {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -111,6 +102,14 @@
 .pbm-btn:hover {
   background: rgba(255,255,255,0.10);
   transform: translate3d(0, -1px, 0);
+}
+
+.pbm-btn-primary {
+  border-color: rgba(80,160,255,0.45);
+  background: rgba(80,160,255,0.14);
+}
+.pbm-btn-primary:hover {
+  background: rgba(80,160,255,0.20);
 }
 
 #pbm-content {
@@ -186,7 +185,7 @@
 }
 
 #pbm-modal {
-  width: 340px;
+  width: 360px;
   border-radius: 16px;
   background: rgba(22,22,26,0.96);
   border: 1px solid var(--pbm-border);
@@ -212,7 +211,7 @@
   opacity: 0.8;
 }
 
-.pbm-input, .pbm-select {
+.pbm-input {
   height: 34px;
   border-radius: 12px;
   border: 1px solid var(--pbm-border);
@@ -229,10 +228,71 @@
   margin-top: 6px;
 }
 
-.pbm-btn-primary {
-  border-color: rgba(80,160,255,0.45);
-  background: rgba(80,160,255,0.14);
+/* --- Custom folder dropdown --- */
+.pbm-dd {
+  position: relative;
 }
-.pbm-btn-primary:hover {
-  background: rgba(80,160,255,0.20);
+
+.pbm-dd-btn {
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid var(--pbm-border);
+  background: rgba(255,255,255,0.06);
+  color: var(--pbm-text);
+  padding: 0 10px;
+  outline: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  user-select: none;
+}
+
+.pbm-dd-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pbm-dd-caret {
+  opacity: 0.8;
+  flex: 0 0 auto;
+}
+
+.pbm-dd-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  border-radius: 14px;
+  border: 1px solid var(--pbm-border);
+  background: rgba(22,22,26,0.98);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+  max-height: 240px;
+  overflow: auto;
+  padding: 6px;
+  display: none;
+  z-index: 2147483647;
+}
+
+.pbm-dd-menu.pbm-open {
+  display: block;
+}
+
+.pbm-dd-item {
+  padding: 9px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--pbm-text);
+  transition: background 120ms ease;
+}
+
+.pbm-dd-item:hover {
+  background: var(--pbm-soft);
+}
+
+.pbm-dd-item.pbm-dd-dim {
+  color: var(--pbm-text-dim);
 }
