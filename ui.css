@@ -1,0 +1,146 @@
+#pbm-handle {
+  position: fixed;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 90px;
+  border-radius: 14px 0 0 14px;
+  background: rgba(20, 20, 24, 0.72);
+  backdrop-filter: blur(10px);
+  z-index: 2147483647;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+#pbm-handle::before {
+  content: "❯";
+  font-size: 18px;
+  color: rgba(255,255,255,0.9);
+  transform: rotate(180deg);
+  transition: transform 200ms ease;
+}
+
+#pbm-handle.pbm-open::before {
+  transform: rotate(0deg);
+}
+
+#pbm-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 360px;
+  transform: translateX(100%);
+  transition: transform 220ms ease;
+  z-index: 2147483646;
+  background: rgba(18, 18, 22, 0.78);
+  backdrop-filter: blur(14px);
+  box-shadow: -20px 0 60px rgba(0,0,0,0.45);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgba(255,255,255,0.08);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  color: rgba(255,255,255,0.92);
+}
+
+#pbm-sidebar.pbm-open {
+  transform: translateX(0);
+}
+
+#pbm-header {
+  padding: 14px 14px 10px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+#pbm-search {
+  flex: 1;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  outline: none;
+  color: rgba(255,255,255,0.92);
+  padding: 0 12px;
+}
+
+#pbm-collapse {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.9);
+  cursor: pointer;
+  transition: background 140ms ease;
+  white-space: nowrap;
+}
+
+#pbm-collapse:hover {
+  background: rgba(255,255,255,0.10);
+}
+
+#pbm-content {
+  padding: 10px;
+  overflow: auto; /* скролл колесом и полоса */
+}
+
+.pbm-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 140ms ease, transform 140ms ease;
+}
+
+.pbm-item:hover {
+  background: rgba(255,255,255,0.08);
+  transform: translateX(-2px);
+}
+
+.pbm-favicon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.12);
+  flex: 0 0 auto;
+}
+
+.pbm-title {
+  font-size: 13px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pbm-folder {
+  font-weight: 600;
+  opacity: 0.95;
+}
+
+.pbm-children {
+  margin-left: 16px;
+  border-left: 1px dashed rgba(255,255,255,0.12);
+  padding-left: 10px;
+  display: none;
+}
+
+.pbm-folder-row.pbm-expanded + .pbm-children {
+  display: block;
+}
+
+.pbm-empty {
+  padding: 14px 10px;
+  opacity: 0.75;
+  font-size: 13px;
+}

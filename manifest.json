@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Pretty Bookmark Sidebar",
+  "version": "0.2.0",
+  "description": "Красивый менеджер закладок: выезжает справа на любом сайте.",
+  "permissions": ["bookmarks", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["ui.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Bookmark Sidebar"
+  }
+}
